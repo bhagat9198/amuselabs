@@ -1,0 +1,16 @@
+{
+  "compilerOptions": {
+    "target": "ES6",
+    "module": "commonjs",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "outDir": "./dist",  // Output directory for compiled code
+    "rootDir": "./src",  // Specify the root directory of input files
+    "removeComments": true,  // Optionally remove comments for production code
+    "sourceMap": false     // Disable source maps for production (or enable for debugging)
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist"]
+}
