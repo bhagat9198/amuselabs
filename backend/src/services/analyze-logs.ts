@@ -6,17 +6,18 @@ import { TIME_INTERVAL, watchLogFile } from './watch-logfile';
 import csv from 'csv-parser';
 import { time } from 'console';
 
-// Define the output paths
+// 1. Define the output paths
 const outputDir = path.resolve(__dirname, '../data/output');
 const outputFile = path.join(outputDir, 'metrics.csv');
 const logFilePath = path.resolve(__dirname, '../data/input/log1.log');
 
-// Ensure the directory exists
+// 1.a. Ensure the directory exists
+// If the output directory doesn't exist, create it
 if (!fs.existsSync(outputDir)) {
   fs.mkdirSync(outputDir, { recursive: true });  // Create the directory recursively if it doesn't exist
 }
  
-// Type definition for a log entry
+// [info] Type definition for a log entry
 interface LogEntry {
   level: string;
   timestamp: string;
@@ -25,7 +26,8 @@ interface LogEntry {
   extra?: any;
 }
 
-// Initialize metric counters
+// 2. Initialize Log Metrics
+// These metrics will be updated based on the log file content
 const logMetrics = {
   timestamp: '',
   info: 0,
@@ -42,13 +44,16 @@ const logMetrics = {
   cartAdditions: 0,
   cartFailures: 0,
   cartRemovals: 0,
-  reviewsSubmitted: 0, // Track reviews
-  reviewRatings: {} as Record<number, number>,  // Track reviews by rating
-  lowStockWarnings: 0, // Track low stock warnings
-  stockUpdates: 0, // Track stock updates
+  reviewsSubmitted: 0, 
+  reviewRatings: {} as Record<number, number>,
+  lowStockWarnings: 0, 
+  stockUpdates: 0, 
 };
+// [info] To hold batches of metrics before writing to CSV
 let metricsBatchRecords: typeof logMetrics[] = [];
 
+// 3. CSV Headers for Metrics
+// [info] These define the structure of our CSV file and will be written on each batch write
 export const csvFileHeaders = [
   { id: 'timestamp', title: 'TIMESTAMP' },
   { id: 'info', title: 'INFO_COUNT' },
@@ -71,13 +76,9 @@ export const csvFileHeaders = [
   { id: 'stockUpdates', title: 'STOCK_UPDATES' },
 ]
 
-// Initialize the CSV writer for writing metrics output.
-// const csvWriter = createObjectCsvWriter({
-//   path: outputFile,
-//   header: csvFileHeaders,
-// });
 
-// Function to write or append to CSV with header logic
+// 8. Write Metrics to CSV
+// [info] This function writes the accumulated records to the CSV file at intervals
 async function appendCsvRecord(records: typeof logMetrics[]) {
   // Ensure the directory exists
   if (!fs.existsSync(outputDir)) {
@@ -94,7 +95,7 @@ async function appendCsvRecord(records: typeof logMetrics[]) {
     append: !isEmptyFile,   // Append only if the file is non-empty
   });
 
-  // Map the batch of records, transforming any complex fields into strings
+  // Transform complex fields (like search terms) into a string for CSV format
   const formattedRecords = records.map((logMetric) => {
     return {
       timestamp: logMetric.timestamp,
@@ -126,27 +127,21 @@ async function appendCsvRecord(records: typeof logMetrics[]) {
   // Write headers if file is empty, otherwise just append the data
   try {
     await csvWriter.writeRecords(formattedRecords);
-    console.log('Metrics have been written/appended to CSV.');
+    console.log(`${formattedRecords.length} Metrics have been written/appended to CSV.`);
   } catch (err) {
     console.error('Error writing/appending to CSV:', err);
   }
 }
 
-
-
-/**
- * Function to dynamically parse a log line.
- * This uses regular expressions to dynamically extract timestamp, module, level, and message.
- * It can be adapted to handle changes in log format in the future.
- */
+// 5. Function to dynamically parse a log line
+// This uses regular expressions to dynamically extract timestamp, module, level, and message.
 function parseLog(line: string): LogEntry | null {
-  // Match and capture timestamp, module, log level, and message (in any order)
+  // [info] Match and capture timestamp, module, log level, and message (in any order)
   const timestampRegex = /\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/;
   const moduleRegex = /\[module: (\w+)\]/;
   const levelRegex = /\[(INFO|WARNING|ERROR)\]/;
   const messageRegex = /.+$/;  // Capture the rest of the message after log level and module
 
-  // Extract all parts from the log
   const timestampMatch = line.match(timestampRegex);
   const moduleMatch = line.match(moduleRegex);
   const levelMatch = line.match(levelRegex);
@@ -161,12 +156,12 @@ function parseLog(line: string): LogEntry | null {
     return { level, timestamp, module, message };
   }
 
-  return null; // Return null if the log line doesn't match expected patterns
+  // [info] Return null if the log line doesn't match expected patterns
+  return null; 
 }
 
-/**
- * Function to analyze a parsed log entry and update metrics accordingly.
- */
+
+// 7. Analyze Log and Update Metrics: Delegates log parsing to individual functions for specific log types
 function analyzeLog(entry: LogEntry) {
   try {
     // console.log('analyzeLog :: entry :: ', entry);
@@ -178,20 +173,15 @@ function analyzeLog(entry: LogEntry) {
     parseSearchLogs(entry);
     parsePaymentLogs(entry);
     parseStockLogs(entry);
-
-    // Track log levels
     trackLogLevels(entry);
-
-    // writeMetricsToCSV()
     logMetrics.timestamp = entry.timestamp;
-    
   } catch (error: any) {
     console.error('Error processing log entry:', entry, error.message);
     return null
   }
 }
 
-// Handle log levels (INFO, WARNING, ERROR)
+// 7.A. Track Log Levels (INFO, WARNING, ERROR)
 function trackLogLevels(entry: LogEntry) {
   switch (entry.level) {
     case 'INFO':
@@ -208,7 +198,7 @@ function trackLogLevels(entry: LogEntry) {
   }
 }
 
-// Generalized handler for order-related logs
+// 7.B. Generalized handler for order-related logs
 function parseOrderLogs(entry: LogEntry) {
   const orderRegex = /\bOrder\b.*#[0-9]+/;  // Capture order-related logs
   if (!orderRegex.test(entry.message)) return;
@@ -223,7 +213,7 @@ function parseOrderLogs(entry: LogEntry) {
 }
 
 
-// Generalized handler for cart-related logs
+// 7.C. Generalized handler for cart-related logs
 function parseCartLogs(entry: LogEntry) {
   const productRegex = /\bproduct\b.*ID #[0-9]+/;
   if (!productRegex.test(entry.message)) return;
@@ -235,7 +225,7 @@ function parseCartLogs(entry: LogEntry) {
   }
 }
 
-// Handle product reviews
+// 7.D. Handle product reviews
 function parseReviewLogs(entry: LogEntry) {
   const reviewRegex = /submitted a review for product ID #[0-9]+: rating (\d+) stars/;
   const reviewMatch = entry.message.match(reviewRegex);
@@ -247,7 +237,7 @@ function parseReviewLogs(entry: LogEntry) {
   }
 }
 
-// Generalized handler for search-related logs// Generalized handler for search-related logs
+// 7.E. Generalized handler for search-related logs// Generalized handler for search-related logs
 function parseSearchLogs(entry: LogEntry) {
   const searchRegex = /\bsearch\b.*query '([^']+)'/;
   const searchMatch = entry.message.match(searchRegex);
@@ -270,7 +260,7 @@ function parseSearchLogs(entry: LogEntry) {
 }
 
 
-// Generalized handler for payment-related logs
+// 7.F. Generalized handler for payment-related logs
 function parsePaymentLogs(entry: LogEntry) {
   const paymentSuccessRegex = /Payment.*success.*order.*ID #[0-9]+.*amount: \$([\d.]+)/;
   const paymentFailureRegex = /Payment.*failed.*order.*ID #[0-9]+.*amount: \$([\d.]+)/;
@@ -287,7 +277,7 @@ function parsePaymentLogs(entry: LogEntry) {
   }
 }
 
-// Handle stock warnings and updates
+// 7.G. Handle stock warnings and updates
 function parseStockLogs(entry: LogEntry) {
   if (entry.message.includes('Low stock warning for product ID')) {
     logMetrics.lowStockWarnings++;
@@ -296,6 +286,7 @@ function parseStockLogs(entry: LogEntry) {
   }
 }
 
+// 4.A. Load Previous Metrics from CSV (if any) when the program starts
 async function loadPreviousMetrics() {
   if (fs.existsSync(outputFile)) {
     // Open the file for reading
@@ -361,6 +352,7 @@ async function loadPreviousMetrics() {
   }
 }
 
+// 4.C. Schedule Batch Write metrics to CSV 
 function scheduleBatchWrite() {
   setInterval(() => {
     if (metricsBatchRecords.length > 0) {
@@ -370,12 +362,17 @@ function scheduleBatchWrite() {
   }, TIME_INTERVAL); // Adjust the time interval (in ms) as required
 }
 
+
+// 4. Log Ingestion Process
+// Main function that loads previous metrics, ingests new logs, and writes metrics to CSV periodically
 export async function ingestLogs() {
+  // 4.a. Load Previous Metrics from CSV (if any)
   await loadPreviousMetrics();
 
-  const logEmitter = await watchLogFile(); // Start watching the log file
+  // [info] Start watching the log file and trigger processing when new entries are added
+  const logEmitter = await watchLogFile();
 
-  // Listen for 'logEntry' events and process each log entry
+  // 4.b. Process each log entry as it's detected
   logEmitter.on('logInterval', (logEntries: string[]) => {
     logEntries.forEach((logEntry: string) => {
       const logEntryParsed = parseLog(logEntry);
@@ -386,9 +383,10 @@ export async function ingestLogs() {
     })
   });
 
-  // Schedule batch write every `n` minutes
+  // 4.c. Schedule batch write every `n` minutes
   scheduleBatchWrite();
 
+  // [info] Error handling for log file watching
   logEmitter.on('error', (err: any) => {
     console.error('Error from log watcher:', err);
   });
