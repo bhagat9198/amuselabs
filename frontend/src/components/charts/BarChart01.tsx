@@ -57,7 +57,7 @@ function BarChart01({
           x: {
             type: 'time',
             time: {
-              parser: 'MM-DD-YYYY HH:mm',
+              parser: 'MM-DD-YYYY HH:mm:ss',
               unit: 'month',
               displayFormats: {
                 month: 'MMM YY',
@@ -150,7 +150,7 @@ function BarChart01({
               label.style.fontSize = tailwindConfig().theme.fontSize.sm[0];
               label.style.lineHeight = tailwindConfig().theme.fontSize.sm[1].lineHeight;
               const theValue = c.data.datasets[item.datasetIndex].data.reduce((a, b) => a + b, 0);
-              const valueText = document.createTextNode(formatValue(theValue));
+              const valueText = document.createTextNode(theValue);
               const labelText = document.createTextNode(item.text);
               value.appendChild(valueText);
               label.appendChild(labelText);

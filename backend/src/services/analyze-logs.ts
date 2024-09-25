@@ -2,8 +2,9 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as readline from 'readline';
 import { createObjectCsvWriter } from 'csv-writer';
-import { watchLogFile } from './watch-logfile';
+import { TIME_INTERVAL, watchLogFile } from './watch-logfile';
 import csv from 'csv-parser';
+import { time } from 'console';
 
 // Define the output paths
 const outputDir = path.resolve(__dirname, '../data/output');
@@ -26,6 +27,7 @@ interface LogEntry {
 
 // Initialize metric counters
 const logMetrics = {
+  timestamp: '',
   info: 0,
   warning: 0,
   error: 0,
@@ -45,6 +47,7 @@ const logMetrics = {
   lowStockWarnings: 0, // Track low stock warnings
   stockUpdates: 0, // Track stock updates
 };
+let metricsBatchRecords: typeof logMetrics[] = [];
 
 export const csvFileHeaders = [
   { id: 'timestamp', title: 'TIMESTAMP' },
@@ -69,13 +72,13 @@ export const csvFileHeaders = [
 ]
 
 // Initialize the CSV writer for writing metrics output.
-const csvWriter = createObjectCsvWriter({
-  path: outputFile,
-  header: csvFileHeaders,
-});
+// const csvWriter = createObjectCsvWriter({
+//   path: outputFile,
+//   header: csvFileHeaders,
+// });
 
 // Function to write or append to CSV with header logic
-async function appendCsvRecord(record: any) {
+async function appendCsvRecord(records: typeof logMetrics[]) {
   // Ensure the directory exists
   if (!fs.existsSync(outputDir)) {
     fs.mkdirSync(outputDir, { recursive: true });
@@ -84,37 +87,81 @@ async function appendCsvRecord(record: any) {
   // Check if the file exists and is non-empty
   const isEmptyFile = fs.existsSync(outputFile) && fs.statSync(outputFile).size === 0;
 
+  // Re-initialize the CSV writer each time with headers
   const csvWriter = createObjectCsvWriter({
     path: outputFile,
     header: csvFileHeaders, // Your headers
-    append: !isEmptyFile,  // Append only if the file is non-empty
+    append: !isEmptyFile,   // Append only if the file is non-empty
+  });
+
+  // Map the batch of records, transforming any complex fields into strings
+  const formattedRecords = records.map((logMetric) => {
+    return {
+      timestamp: logMetric.timestamp,
+      info: logMetric.info,
+      warning: logMetric.warning,
+      error: logMetric.error,
+      searchCount: logMetric.searchCount,
+      topSearchTerms: Object.entries(logMetric.searchTerms)
+        .map(([term, count]) => `${term}: ${count}`)
+        .join(', '), // Convert object to string
+      ordersPlaced: logMetric.ordersPlaced,
+      ordersCompleted: logMetric.ordersCompleted,
+      ordersCanceled: logMetric.ordersCanceled,
+      paymentSuccess: logMetric.paymentSuccess,
+      paymentFailure: logMetric.paymentFailure,
+      revenue: logMetric.revenue,
+      cartAdditions: logMetric.cartAdditions,
+      cartFailures: logMetric.cartFailures,
+      cartRemovals: logMetric.cartRemovals,
+      reviewsSubmitted: logMetric.reviewsSubmitted,
+      reviewRatings: Object.entries(logMetric.reviewRatings)
+        .map(([stars, count]) => `${stars} stars: ${count}`)
+        .join(', '), // Convert object to string
+      lowStockWarnings: logMetric.lowStockWarnings,
+      stockUpdates: logMetric.stockUpdates,
+    };
   });
 
   // Write headers if file is empty, otherwise just append the data
-  csvWriter.writeRecords([record])
-    .then(() => {
-      console.log('Metrics have been written/appended to CSV.');
-    })
-    .catch((err) => {
-      console.error('Error writing/appending to CSV:', err);
-    });
+  try {
+    await csvWriter.writeRecords(formattedRecords);
+    console.log('Metrics have been written/appended to CSV.');
+  } catch (err) {
+    console.error('Error writing/appending to CSV:', err);
+  }
 }
 
 
+
 /**
- * Function to parse a single log line.
- * This uses regular expressions to extract relevant fields from a log entry.
- * If the log entry doesn't match the expected format, it returns null.
+ * Function to dynamically parse a log line.
+ * This uses regular expressions to dynamically extract timestamp, module, level, and message.
+ * It can be adapted to handle changes in log format in the future.
  */
 function parseLog(line: string): LogEntry | null {
-  const logRegex = /^\[(\w+)] \[([\d\-:\s]+)] \[module: (\w+)] (.+)$/;
-  const match = line.match(logRegex);
+  // Match and capture timestamp, module, log level, and message (in any order)
+  const timestampRegex = /\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/;
+  const moduleRegex = /\[module: (\w+)\]/;
+  const levelRegex = /\[(INFO|WARNING|ERROR)\]/;
+  const messageRegex = /.+$/;  // Capture the rest of the message after log level and module
 
-  if (match) {
-    const [_, level, timestamp, module, message] = match;
+  // Extract all parts from the log
+  const timestampMatch = line.match(timestampRegex);
+  const moduleMatch = line.match(moduleRegex);
+  const levelMatch = line.match(levelRegex);
+  const messageMatch = line.match(messageRegex);
+
+  if (timestampMatch && moduleMatch && messageMatch) {
+    const timestamp = timestampMatch[0];
+    const module = moduleMatch[1];
+    const level = levelMatch ? levelMatch[1] : 'INFO'; // Default to INFO if no level detected
+    const message = messageMatch[0];
+
     return { level, timestamp, module, message };
   }
-  return null;
+
+  return null; // Return null if the log line doesn't match expected patterns
 }
 
 /**
@@ -122,7 +169,7 @@ function parseLog(line: string): LogEntry | null {
  */
 function analyzeLog(entry: LogEntry) {
   try {
-    // console.log('Analyzing log entry ::', entry);
+    // console.log('analyzeLog :: entry :: ', entry);
     
     // Parse log content
     parseOrderLogs(entry);
@@ -135,9 +182,12 @@ function analyzeLog(entry: LogEntry) {
     // Track log levels
     trackLogLevels(entry);
 
-    writeMetricsToCSV()
+    // writeMetricsToCSV()
+    logMetrics.timestamp = entry.timestamp;
+    
   } catch (error: any) {
     console.error('Error processing log entry:', entry, error.message);
+    return null
   }
 }
 
@@ -158,28 +208,29 @@ function trackLogLevels(entry: LogEntry) {
   }
 }
 
-// Handle order-related activities
+// Generalized handler for order-related logs
 function parseOrderLogs(entry: LogEntry) {
-  const orderRegex = /Order #[0-9]+/;
+  const orderRegex = /\bOrder\b.*#[0-9]+/;  // Capture order-related logs
   if (!orderRegex.test(entry.message)) return;
 
-  if (entry.message.includes('created for')) {
+  if (/created for/.test(entry.message)) {
     logMetrics.ordersPlaced++;
-  } else if (entry.message.includes('canceled by')) {
+  } else if (/canceled by/.test(entry.message)) {
     logMetrics.ordersCanceled++;
-  } else if (entry.message.includes('shipped to')) {
+  } else if (/shipped to/.test(entry.message)) {
     logMetrics.ordersCompleted++;
   }
 }
 
-// Handle cart-related activities
+
+// Generalized handler for cart-related logs
 function parseCartLogs(entry: LogEntry) {
-  const productRegex = /product ID #[0-9]+/;
+  const productRegex = /\bproduct\b.*ID #[0-9]+/;
   if (!productRegex.test(entry.message)) return;
 
-  if (entry.message.includes('added product ID')) {
+  if (/added product/.test(entry.message)) {
     logMetrics.cartAdditions++;
-  } else if (entry.message.includes('failed to add product ID')) {
+  } else if (/failed to add product/.test(entry.message)) {
     logMetrics.cartFailures++;
   }
 }
@@ -196,27 +247,38 @@ function parseReviewLogs(entry: LogEntry) {
   }
 }
 
-// Handle product searches
+// Generalized handler for search-related logs// Generalized handler for search-related logs
 function parseSearchLogs(entry: LogEntry) {
-  const searchRegex = /Product search for query '([^']+)'/;
+  const searchRegex = /\bsearch\b.*query '([^']+)'/;
   const searchMatch = entry.message.match(searchRegex);
 
   if (searchMatch) {
     logMetrics.searchCount++;
     const searchTerm = searchMatch[1];
+
+    // Increment the count for the search term
     logMetrics.searchTerms[searchTerm] = (logMetrics.searchTerms[searchTerm] || 0) + 1;
+
+    // Get an array of search terms sorted by their count in descending order
+    const sortedSearchTerms = Object.entries(logMetrics.searchTerms)
+      .sort(([, countA], [, countB]) => countB - countA) // Sort by count (descending)
+      .slice(0, 3); // Keep only the top 3 search terms
+
+    // Rebuild the searchTerms object with only the top 3 search terms
+    logMetrics.searchTerms = Object.fromEntries(sortedSearchTerms);
   }
 }
 
-// Handle payment activities
+
+// Generalized handler for payment-related logs
 function parsePaymentLogs(entry: LogEntry) {
-  const paymentSuccessRegex = /Payment processed successfully for order ID #[0-9]+ amount: \$([\d.]+)/;
-  const paymentFailureRegex = /Payment failed for order ID #[0-9]+ amount: \$([\d.]+)/;
+  const paymentSuccessRegex = /Payment.*success.*order.*ID #[0-9]+.*amount: \$([\d.]+)/;
+  const paymentFailureRegex = /Payment.*failed.*order.*ID #[0-9]+.*amount: \$([\d.]+)/;
 
   const paymentSuccessMatch = entry.message.match(paymentSuccessRegex);
   if (paymentSuccessMatch) {
     logMetrics.paymentSuccess++;
-    logMetrics.revenue += parseFloat(paymentSuccessMatch[1]);
+    logMetrics.revenue = parseFloat((logMetrics.revenue + parseFloat(paymentSuccessMatch[1])).toFixed(2));
   }
 
   const paymentFailureMatch = entry.message.match(paymentFailureRegex);
@@ -232,37 +294,6 @@ function parseStockLogs(entry: LogEntry) {
   } else if (entry.message.includes('Stock updated for product ID')) {
     logMetrics.stockUpdates++;
   }
-}
-
-// Updated function to write metrics to CSV (appending instead of overwriting)
-function writeMetricsToCSV() {
-  const currentTime = new Date().toISOString();
-
-  // Example record, updated based on new log entries
-  const record = {
-    timestamp: currentTime,
-    info: logMetrics.info,
-    warning: logMetrics.warning,
-    error: logMetrics.error,
-    searchCount: logMetrics.searchCount,
-    topSearchTerms: Object.entries(logMetrics.searchTerms).map(([term, count]) => `${term}: ${count}`).join(', '),
-    ordersPlaced: logMetrics.ordersPlaced,
-    ordersCompleted: logMetrics.ordersCompleted,
-    ordersCanceled: logMetrics.ordersCanceled,
-    paymentSuccess: logMetrics.paymentSuccess,
-    paymentFailure: logMetrics.paymentFailure,
-    revenue: logMetrics.revenue,
-    cartAdditions: logMetrics.cartAdditions,
-    cartFailures: logMetrics.cartFailures,
-    cartRemovals: logMetrics.cartRemovals,
-    reviewsSubmitted: logMetrics.reviewsSubmitted,
-    reviewRatings: Object.entries(logMetrics.reviewRatings).map(([stars, count]) => `${stars} stars: ${count}`).join(', '),
-    lowStockWarnings: logMetrics.lowStockWarnings,
-    stockUpdates: logMetrics.stockUpdates,
-  };
-
-  // Call appendCsvRecord to write data
-  appendCsvRecord(record);
 }
 
 async function loadPreviousMetrics() {
@@ -330,21 +361,33 @@ async function loadPreviousMetrics() {
   }
 }
 
+function scheduleBatchWrite() {
+  setInterval(() => {
+    if (metricsBatchRecords.length > 0) {
+      appendCsvRecord(metricsBatchRecords); // Write batch to CSV
+      metricsBatchRecords = []; // Clear the batch
+    }
+  }, TIME_INTERVAL); // Adjust the time interval (in ms) as required
+}
 
 export async function ingestLogs() {
-  await loadPreviousMetrics()
-  console.log('ingestLogs :: logMetrics :: ', logMetrics);
-  
+  await loadPreviousMetrics();
+
   const logEmitter = await watchLogFile(); // Start watching the log file
 
   // Listen for 'logEntry' events and process each log entry
-  logEmitter.on('logEntry', (logEntry: string) => {
-    // processLogEntry(logEntry); // Process each log entry as it's received
-    const logEntryParsed = parseLog(logEntry);
-    if (logEntryParsed) {
-      analyzeLog(logEntryParsed);
-    }
+  logEmitter.on('logInterval', (logEntries: string[]) => {
+    logEntries.forEach((logEntry: string) => {
+      const logEntryParsed = parseLog(logEntry);
+      if (logEntryParsed) {
+        analyzeLog(logEntryParsed);
+        metricsBatchRecords.push({ ...logMetrics }); // Add current metrics to the batch
+      }
+    })
   });
+
+  // Schedule batch write every `n` minutes
+  scheduleBatchWrite();
 
   logEmitter.on('error', (err: any) => {
     console.error('Error from log watcher:', err);

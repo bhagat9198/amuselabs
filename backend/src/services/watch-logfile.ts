@@ -15,24 +15,40 @@ let lastFileSize = 0;
 // Create an EventEmitter instance
 const logEmitter = new EventEmitter();
 
-// Function to process new log entries and emit events
+// Configurable time interval (in milliseconds)
+export const TIME_INTERVAL = .5 * 60 * 1000; // 5 minutes (you can change this as needed)
+
+// Cache for accumulating logs
+let accumulatedLogs: string[] = [];
+
+// Function to process new log entries and accumulate them
 async function processNewLogEntries(fromPosition: number) {
   const readStream = fs.createReadStream(logFilePath, { encoding: 'utf8', start: fromPosition });
   const rl = readline.createInterface({ input: readStream });
 
   rl.on('line', (line: string) => {
-    console.log('New Log Entry:', line);
-    logEmitter.emit('logEntry', line); // Emit event for each log entry
-    // Add your logic to parse and process the log entry here
+    // console.log('New Log Entry:', line);
+    accumulatedLogs.push(line); // Accumulate logs
   });
 
   rl.on('close', () => {
-    console.log('Finished processing new log entries.');
+    // console.log('Finished processing new log entries.');
   });
 
   rl.on('error', (err: any) => {
     console.error('Error reading log stream:', err);
   });
+}
+
+// Function to emit accumulated logs after each interval
+function emitLogsAtInterval() {
+  setInterval(() => {
+    if (accumulatedLogs.length > 0) {
+      console.log(`Emitting ${accumulatedLogs.length} logs...`);
+      logEmitter.emit('logInterval', accumulatedLogs); // Emit accumulated logs as a batch
+      accumulatedLogs = []; // Reset accumulated logs after emitting
+    }
+  }, TIME_INTERVAL);
 }
 
 // Function to check if the log file exists
@@ -61,6 +77,9 @@ export async function watchLogFile() {
   } catch (err) {
     console.error('Error initializing log file watcher:', err);
   }
+
+  // Start the time interval to emit logs every n minutes
+  emitLogsAtInterval();
 
   // Watch the log file for changes
   fs.watch(logFilePath, async (eventType) => {

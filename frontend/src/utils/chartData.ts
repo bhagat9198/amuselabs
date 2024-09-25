@@ -243,6 +243,56 @@ export function getChartDataFromTopSearchTerms(metrics) {
   };
 }
 
+export function getChartDataFromReviewRatings(metrics) {
+  // Initialize an object to keep track of total counts for each star rating (1-5 stars)
+  const reviewRatingsTotals = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+  if(!metrics || metrics.length === 0) {
+    return {
+      labels: [], // e.g., ['blender', 'vacuum cleaner', 'SSD']
+      datasets: [
+        {
+          label: 'Review Ratings', // Label for the dataset
+          data: [], // e.g., [10, 5, 7]
+          backgroundColor: [], // Colors for each term
+          hoverBackgroundColor: [], // Hover colors for each term
+          borderWidth: 0, // Border width for each section
+        },
+      ],
+    };
+  }
+
+  const metric = metrics[metrics.length - 1];
+  console.log('getChartDataFromReviewRatings :: metric :: ', metric);
+  
+    Object.entries(metric.reviewRatings).forEach(([rating, count]: [rating: any, count: number]) => {
+      // Update the total count for each rating
+      reviewRatingsTotals[rating] += count;
+    });
+
+  // Initialize arrays for labels, data, and colors
+  const labels = ['1 star', '2 stars', '3 stars', '4 stars', '5 stars']; // Fixed labels for 1-5 stars
+  const data = Object.values(reviewRatingsTotals);  // Extract counts for each star rating
+  const backgroundColors = labels.map((_, index) => getBgColor(index)); // Set background colors
+  const hoverBackgroundColors = labels.map((_, index) => getHoverColor(index)); // Set hover colors
+
+  // Return chartData in the required format
+  return {
+    labels: labels, // ['1 star', '2 stars', '3 stars', '4 stars', '5 stars']
+    datasets: [
+      {
+        label: 'Review Ratings', // Label for the dataset
+        data: data, // e.g., [0, 1, 4, 2, 1] for ratings
+        backgroundColor: backgroundColors, // Colors for each rating
+        hoverBackgroundColor: hoverBackgroundColors, // Hover colors for each rating
+        borderWidth: 0, // Border width for each section
+      },
+    ],
+  };
+}
+
+
+
+
 export function getChartDataFromStocks(metrics) {
   // Initialize arrays for labels and data
   const labels = [];
@@ -258,7 +308,8 @@ export function getChartDataFromStocks(metrics) {
       year: 'numeric',
       hour: '2-digit',
       minute: '2-digit',
-      hour12: false, // 24-hour format
+      second: '2-digit',  // Add this to include seconds
+      hour12: false,      // 24-hour format
     });
 
     // Add the timestamp to labels array
@@ -357,6 +408,8 @@ function getBgColor(index) {
     tailwindConfig().theme.colors.violet[500],
     tailwindConfig().theme.colors.yellow[500],
     tailwindConfig().theme.colors.green[800],
+    tailwindConfig().theme.colors.blue[800],
+    tailwindConfig().theme.colors.red[800],
   ];
   return colors[index]; // Cycle through colors if more than available
 }
@@ -366,6 +419,9 @@ function getHoverColor(index) {
     tailwindConfig().theme.colors.violet[600],
     tailwindConfig().theme.colors.yellow[600],
     tailwindConfig().theme.colors.green[900],
+    tailwindConfig().theme.colors.blue[700],
+    tailwindConfig().theme.colors.red[700],
+    
   ];
   return colors[index]; // Cycle through hover colors if more than available
 }
