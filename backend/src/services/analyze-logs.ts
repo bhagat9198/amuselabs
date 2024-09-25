@@ -2,6 +2,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as readline from 'readline';
 import { createObjectCsvWriter } from 'csv-writer';
+import { watchLogFile } from './watch-logfile';
+import csv from 'csv-parser';
 
 // Define the output paths
 const outputDir = path.resolve(__dirname, '../data/output');
@@ -12,7 +14,7 @@ const logFilePath = path.resolve(__dirname, '../data/input/log1.log');
 if (!fs.existsSync(outputDir)) {
   fs.mkdirSync(outputDir, { recursive: true });  // Create the directory recursively if it doesn't exist
 }
-
+ 
 // Type definition for a log entry
 interface LogEntry {
   level: string;
@@ -72,8 +74,32 @@ const csvWriter = createObjectCsvWriter({
   header: csvFileHeaders,
 });
 
-// Track the last file size to only read new log lines
-let lastFileSize = 0;
+// Function to write or append to CSV with header logic
+async function appendCsvRecord(record: any) {
+  // Ensure the directory exists
+  if (!fs.existsSync(outputDir)) {
+    fs.mkdirSync(outputDir, { recursive: true });
+  }
+
+  // Check if the file exists and is non-empty
+  const isEmptyFile = fs.existsSync(outputFile) && fs.statSync(outputFile).size === 0;
+
+  const csvWriter = createObjectCsvWriter({
+    path: outputFile,
+    header: csvFileHeaders, // Your headers
+    append: !isEmptyFile,  // Append only if the file is non-empty
+  });
+
+  // Write headers if file is empty, otherwise just append the data
+  csvWriter.writeRecords([record])
+    .then(() => {
+      console.log('Metrics have been written/appended to CSV.');
+    })
+    .catch((err) => {
+      console.error('Error writing/appending to CSV:', err);
+    });
+}
+
 
 /**
  * Function to parse a single log line.
@@ -96,6 +122,8 @@ function parseLog(line: string): LogEntry | null {
  */
 function analyzeLog(entry: LogEntry) {
   try {
+    // console.log('Analyzing log entry ::', entry);
+    
     // Parse log content
     parseOrderLogs(entry);
     parseCartLogs(entry);
@@ -106,6 +134,8 @@ function analyzeLog(entry: LogEntry) {
 
     // Track log levels
     trackLogLevels(entry);
+
+    writeMetricsToCSV()
   } catch (error: any) {
     console.error('Error processing log entry:', entry, error.message);
   }
@@ -204,32 +234,18 @@ function parseStockLogs(entry: LogEntry) {
   }
 }
 
-/**
- * Function to write the collected metrics to a CSV file.
- */
+// Updated function to write metrics to CSV (appending instead of overwriting)
 function writeMetricsToCSV() {
   const currentTime = new Date().toISOString();
 
-  // Get top 3 search terms along with their counts
-  const topSearchTerms = Object.entries(logMetrics.searchTerms)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 3)
-    .map(([term, count]) => `${term}: ${count}`) // Include both the term and the count
-    .join(', ');
-
-  // Aggregate review ratings
-  const reviewRatingsSummary = Object.entries(logMetrics.reviewRatings)
-    .map(([rating, count]) => `${rating} stars: ${count}`)
-    .join(', ');
-
-  // Write metrics to CSV
-  csvWriter.writeRecords([{
+  // Example record, updated based on new log entries
+  const record = {
     timestamp: currentTime,
     info: logMetrics.info,
     warning: logMetrics.warning,
     error: logMetrics.error,
     searchCount: logMetrics.searchCount,
-    topSearchTerms: topSearchTerms || 'N/A',  // Display both term and count
+    topSearchTerms: Object.entries(logMetrics.searchTerms).map(([term, count]) => `${term}: ${count}`).join(', '),
     ordersPlaced: logMetrics.ordersPlaced,
     ordersCompleted: logMetrics.ordersCompleted,
     ordersCanceled: logMetrics.ordersCanceled,
@@ -240,68 +256,98 @@ function writeMetricsToCSV() {
     cartFailures: logMetrics.cartFailures,
     cartRemovals: logMetrics.cartRemovals,
     reviewsSubmitted: logMetrics.reviewsSubmitted,
-    reviewRatings: reviewRatingsSummary || 'N/A',
+    reviewRatings: Object.entries(logMetrics.reviewRatings).map(([stars, count]) => `${stars} stars: ${count}`).join(', '),
     lowStockWarnings: logMetrics.lowStockWarnings,
     stockUpdates: logMetrics.stockUpdates,
-  }]).then(() => {
-    console.log('Metrics have been written to CSV.');
-  });
+  };
+
+  // Call appendCsvRecord to write data
+  appendCsvRecord(record);
 }
 
-/**
- * Function to ingest logs from the specified file path starting from a given position.
- */
-function readNewLogEntries(fromPosition: number) {
-  const readStream = fs.createReadStream(logFilePath, { encoding: 'utf8', start: fromPosition });
-  const rl = readline.createInterface({ input: readStream, crlfDelay: Infinity });
+async function loadPreviousMetrics() {
+  if (fs.existsSync(outputFile)) {
+    // Open the file for reading
+    const fileStream = fs.createReadStream(outputFile);
 
-  rl.on('line', (line: string) => {
-    const logEntry = parseLog(line);
-    if (logEntry) {
-      analyzeLog(logEntry);
+    const rl = readline.createInterface({
+      input: fileStream,
+      crlfDelay: Infinity, // Recognize all instances of CR LF as a single newline
+    });
+
+    let lastLine: any;
+
+    // Read the file line by line and store the last line
+    for await (const line of rl) { 
+      lastLine = line;
     }
-  });
 
-  rl.on('close', () => {
-    writeMetricsToCSV(); // Write metrics after processing the new batch of logs
-  });
+    // Check if lastLine is available and parse it into metrics
+    if (lastLine) {
+      const parsed = lastLine.split(',');
 
-  rl.on('error', (err) => {
-    console.error('Error reading new log entries:', err);
-  });
-}
+      // Update the numeric metrics
+      logMetrics.info = parseInt(parsed[1]) || 0;
+      logMetrics.warning = parseInt(parsed[2]) || 0;
+      logMetrics.error = parseInt(parsed[3]) || 0;
+      logMetrics.searchCount = parseInt(parsed[4]) || 0;
+      logMetrics.ordersPlaced = parseInt(parsed[6]) || 0;
+      logMetrics.ordersCompleted = parseInt(parsed[7]) || 0;
+      logMetrics.ordersCanceled = parseInt(parsed[8]) || 0;
+      logMetrics.paymentSuccess = parseInt(parsed[9]) || 0;
+      logMetrics.paymentFailure = parseInt(parsed[10]) || 0;
+      logMetrics.revenue = parseFloat(parsed[11]) || 0;
+      logMetrics.cartAdditions = parseInt(parsed[12]) || 0;
+      logMetrics.cartFailures = parseInt(parsed[13]) || 0;
+      logMetrics.cartRemovals = parseInt(parsed[14]) || 0;
+      logMetrics.reviewsSubmitted = parseInt(parsed[15]) || 0;
+      logMetrics.lowStockWarnings = parseInt(parsed[17]) || 0;
+      logMetrics.stockUpdates = parseInt(parsed[18]) || 0;
 
-/**
- * Function to monitor the log file for changes and process new lines as they are added.
- */
-export function ingestLogs() {
-  fs.watch(logFilePath, (eventType) => {
-    if (eventType === 'change') {
-      // Check the file size and process new lines if the file has grown
-      fs.stat(logFilePath, (err, stats) => {
-        if (err) {
-          console.error('Error reading log file stats:', err);
-          return;
+      // Parse search terms (in format: "blender: 10, camera: 5")
+      const searchTermStr = parsed[5].replace(/['"]/g, '');  // Remove quotes if present
+      searchTermStr.split(',').forEach((term:any) => {
+        const [termName, termCount] = term.split(':').map((item:any) => item.trim());
+        if (termName && termCount) {
+          logMetrics.searchTerms[termName] = parseInt(termCount) || 0;
         }
+      });
 
-        if (stats.size > lastFileSize) {
-          // New data has been added, so process only the new lines
-          readNewLogEntries(lastFileSize);
-          lastFileSize = stats.size;
+      // Parse review ratings (in format: "2 stars: 1, 3 stars: 2")
+      const reviewRatingStr = parsed[16].replace(/['"]/g, '');  // Remove quotes if present
+      reviewRatingStr.split(',').forEach((rating:any) => {
+        const [stars, count] = rating.split(':').map((item:any) => item.trim());
+        const starValue = parseInt(stars.replace('stars', '').trim());
+        if (starValue && count) {
+          logMetrics.reviewRatings[starValue] = parseInt(count) || 0;
         }
       });
     }
+
+    console.log('Previous metrics loaded from the last row of CSV.');
+  } else {
+    console.log('No previous metrics found, starting fresh.');
+  }
+}
+
+
+export async function ingestLogs() {
+  await loadPreviousMetrics()
+  console.log('ingestLogs :: logMetrics :: ', logMetrics);
+  
+  const logEmitter = await watchLogFile(); // Start watching the log file
+
+  // Listen for 'logEntry' events and process each log entry
+  logEmitter.on('logEntry', (logEntry: string) => {
+    // processLogEntry(logEntry); // Process each log entry as it's received
+    const logEntryParsed = parseLog(logEntry);
+    if (logEntryParsed) {
+      analyzeLog(logEntryParsed);
+    }
   });
 
-  // Initialize the lastFileSize to the current size of the log file
-  fs.stat(logFilePath, (err, stats) => {
-    if (err) {
-      console.error('Error initializing log file watcher:', err);
-    } else {
-      lastFileSize = stats.size;
-    }
+  logEmitter.on('error', (err: any) => {
+    console.error('Error from log watcher:', err);
   });
 }
 
-// Start watching the log file
-// watchLogFile();

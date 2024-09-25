@@ -3,6 +3,7 @@ import cors from 'cors'
 import { watchLogFile } from './services/watch-logfile';
 
 import logRoutes from './routes/logs'
+import { ingestLogs } from './services/analyze-logs';
 const app = express();
 const port = 5300;
 
@@ -24,7 +25,7 @@ const corsOptions = {
 app.use(cors(corsOptions))
 app.use('/logs', logRoutes)
 app.get('/', (req: Request, res: Response) => {
-  res.send('Welcome to the backend!!!!');
+  res.send('Welcome to the backend !!!.....!!!!');
 })
 
 app.use('*', (req: Request, res: Response) => {
@@ -32,10 +33,10 @@ app.use('*', (req: Request, res: Response) => {
 });
 
 function onServerStart() {
-  watchLogFile()
+  ingestLogs()
 }
 
-app.listen(port, () => {
+app.listen(port, '0.0.0.0', () => {
   console.log(`Server is running on http://localhost:${port}`);
   onServerStart()
 });

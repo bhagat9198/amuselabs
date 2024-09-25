@@ -156,4 +156,5 @@ if __name__ == "__main__":
     print("Starting log generation...")
     while True:
         generate_log()
-        time.sleep(random.uniform(0.5, 2))  # Simulate log generation rate
+        # time.sleep(random.uniform(0.5, 2))  # Simulate log generation rate
+        time.sleep(15)

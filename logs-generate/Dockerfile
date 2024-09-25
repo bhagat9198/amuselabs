@@ -4,11 +4,12 @@ FROM python:3.9-slim
 # Set the working directory inside the container
 WORKDIR /usr/src/app
 
-# Copy the Python script and any necessary files
-COPY script.py ./
-
 # Install any Python dependencies if required
+# COPY requirements.txt ./
 # RUN pip install -r requirements.txt
 
-# Set the command to run the Python script
+# Expose any necessary ports (if needed)
+EXPOSE 8000
+
+# Command to run the Python script
 CMD ["python3", "script.py"]

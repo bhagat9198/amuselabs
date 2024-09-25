@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as readline from 'readline';
+import { EventEmitter } from 'events';
 
 // Use fs.promises to handle async file system operations
 const fsPromises = fs.promises;
@@ -11,13 +12,17 @@ const logFilePath = path.resolve('/app/logs/ecommerce.log');
 // Track the last file size to read only new lines
 let lastFileSize = 0;
 
-// Function to process new log entries
+// Create an EventEmitter instance
+const logEmitter = new EventEmitter();
+
+// Function to process new log entries and emit events
 async function processNewLogEntries(fromPosition: number) {
   const readStream = fs.createReadStream(logFilePath, { encoding: 'utf8', start: fromPosition });
   const rl = readline.createInterface({ input: readStream });
 
   rl.on('line', (line: string) => {
     console.log('New Log Entry:', line);
+    logEmitter.emit('logEntry', line); // Emit event for each log entry
     // Add your logic to parse and process the log entry here
   });
 
@@ -72,4 +77,6 @@ export async function watchLogFile() {
       }
     }
   });
+
+  return logEmitter; // Return the EventEmitter instance
 }

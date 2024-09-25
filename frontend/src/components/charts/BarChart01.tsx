@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState } from 'react';
-import { useThemeProvider } from '../utils/ThemeContext';
+import { useThemeProvider } from '@/utils/ThemeContext';
 
 import { chartColors } from './ChartjsConfig';
 import {
@@ -8,7 +8,7 @@ import {
 import 'chartjs-adapter-moment';
 
 // Import utilities
-import { tailwindConfig, formatValue } from '../utils/Utils';
+import { tailwindConfig, formatValue } from '@/utils/Utils';
 
 Chart.register(BarController, BarElement, LinearScale, TimeScale, Tooltip, Legend);
 
@@ -47,7 +47,7 @@ function BarChart01({
             },
             ticks: {
               maxTicksLimit: 5,
-              callback: (value) => formatValue(value),
+              callback: (value) => value,
               color: darkMode ? textColor.dark : textColor.light,
             },
             grid: {
@@ -57,7 +57,7 @@ function BarChart01({
           x: {
             type: 'time',
             time: {
-              parser: 'MM-DD-YYYY',
+              parser: 'MM-DD-YYYY HH:mm',
               unit: 'month',
               displayFormats: {
                 month: 'MMM YY',
@@ -80,8 +80,11 @@ function BarChart01({
           },
           tooltip: {
             callbacks: {
-              title: () => false, // Disable tooltip title
-              label: (context) => formatValue(context.parsed.y),
+              label: function (context) {
+                const label = context.dataset.label || ''; // Get the label (e.g., 'Info Count')
+                const value = context.parsed.y; // Get the y-value
+                return `${label}: ${value}`; // Format it as 'Info Count: <value>'
+              }
             },
             bodyColor: darkMode ? tooltipBodyColor.dark : tooltipBodyColor.light,
             backgroundColor: darkMode ? tooltipBgColor.dark : tooltipBgColor.light,
@@ -165,7 +168,7 @@ function BarChart01({
     setChart(newChart);
     return () => newChart.destroy();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [data]);
 
   useEffect(() => {
     if (!chart) return;

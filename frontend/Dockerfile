@@ -4,17 +4,14 @@ FROM node:22
 # Set working directory inside the container
 WORKDIR /app
 
-# Copy the package.json and yarn.lock files
+# Copy only package.json and yarn.lock to install dependencies
 COPY package.json yarn.lock ./
 
 # Install dependencies
 RUN yarn install
 
-# Copy the rest of the application code
-COPY . .
-
-# Expose the Vite dev server port (adjust as needed)
+# Expose the Vite dev server port
 EXPOSE 5174
 
-# Run Vite in development mode
+# Run Vite in development mode with hot module replacement
 CMD ["yarn", "dev"]

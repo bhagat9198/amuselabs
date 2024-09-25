@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState } from 'react';
-import { useThemeProvider } from '../utils/ThemeContext';
+import { useThemeProvider } from '@/utils/ThemeContext';
 
 import { chartColors } from './ChartjsConfig';
 import {
@@ -8,7 +8,7 @@ import {
 import 'chartjs-adapter-moment';
 
 // Import utilities
-import { formatValue } from '../utils/Utils';
+import { formatValue } from '@/utils/Utils';
 
 Chart.register(LineController, LineElement, Filler, PointElement, LinearScale, TimeScale, Tooltip);
 
